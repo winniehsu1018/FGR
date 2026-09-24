@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>成品回報</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f5f7f8;font-family:Arial,sans-serif;color:#202124;font-size:16px}
+.app{max-width:620px;margin:0 auto;padding:18px 14px 40px}
+.card{background:#fff;border-radius:16px;padding:18px;margin-bottom:14px;box-shadow:0 2px 10px rgba(0,0,0,.07)}
+h1{font-size:24px;margin:0 0 8px}
+h2{font-size:19px;margin:0 0 14px}
+.sub{color:#687076;line-height:1.55;font-size:14px}
+label{display:block;font-weight:700;margin:0 0 7px}
+input,textarea,button{font:inherit}
+input,textarea{width:100%;min-height:46px;border:1px solid #c9ced3;border-radius:10px;padding:10px 12px;background:#fff;font-size:16px}
+textarea{min-height:88px;resize:vertical}
+.row{display:flex;gap:10px;align-items:center}
+.row>input{flex:1}
+button{border:0;border-radius:11px;min-height:46px;padding:10px 14px;font-weight:700;cursor:pointer}
+.primary{background:#188038;color:#fff}
+.secondary{background:#e9f1ff;color:#1557b0}
+.complete{background:#137333;color:#fff;width:100%;margin-top:10px}
+.submit{background:#1a73e8;color:#fff;width:100%;margin-top:10px}
+button:disabled{opacity:.55;cursor:not-allowed}
+.message{display:none;border-radius:10px;padding:11px 12px;margin:10px 0;line-height:1.5}
+.message.success{display:block;background:#e6f4ea;color:#137333}
+.message.error{display:block;background:#fce8e6;color:#b3261e}
+.message.info{display:block;background:#e8f0fe;color:#174ea6}
+.search-result{border:1px solid #dde2e6;border-radius:13px;padding:14px;margin-top:10px}
+.part{font-size:19px;font-weight:700;margin-bottom:8px}
+.detail{line-height:1.65;color:#4a4f54}
+.status{display:inline-block;padding:4px 9px;border-radius:999px;background:#eef3f8;font-size:13px;font-weight:700}
+.report-btn{width:100%;margin-top:12px;background:#188038;color:#fff}
+.info{line-height:1.75}
+.info strong{display:inline-block;min-width:86px}
+.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+.sum{background:#f6f8fa;border-radius:10px;text-align:center;padding:10px 5px}
+.sum b{display:block;font-size:19px}
+.sum span{font-size:12px;color:#687076}
+.form-group{margin-bottom:14px}
+.history{border-top:1px solid #e5e7e9;padding-top:10px;margin-top:10px;line-height:1.55}
+.hidden{display:none!important}
+.check{display:flex;align-items:center;gap:8px;margin-top:10px;font-weight:400}
+.check input{width:20px;min-height:20px}
+.back{background:#eef1f3;color:#303438;margin-bottom:12px}
+@media(max-width:420px){.summary{grid-template-columns:1fr 1fr 1fr}.app{padding-left:10px;padding-right:10px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="card">
+    <h1>⚖️ 成品回報</h1>
+    <div id="employee" class="sub">LINE 身分確認中...</div>
+    <div id="msg" class="message"></div>
+  </div>
+
+  <section id="searchView" class="card hidden">
+    <h2>搜尋批次</h2>
+    <div class="sub">可搜尋件號、廠商批號、工令單號或內部批次 ID。</div>
+    <div class="row" style="margin-top:12px">
+      <input id="keyword" type="search" placeholder="輸入件號 / 廠商批號 / 工令單號 / 批次 ID" autocomplete="off">
+      <button id="searchBtn" class="primary" type="button">搜尋</button>
+    </div>
+    <label class="check">
+      <input id="includeCompleted" type="checkbox">
+      顯示已完成批次
+    </label>
+    <div id="results"></div>
+  </section>
+
+  <section id="reportView" class="hidden">
+    <button class="back" type="button" id="backBtn">← 返回搜尋</button>
+    <div class="card">
+      <h2>批次資料</h2>
+      <div id="batchInfo" class="info"></div>
+      <div id="summary" class="summary"></div>
+    </div>
+
+    <div id="reportCard" class="card">
+      <h2>回報成品</h2>
+      <form id="reportForm">
+        <div class="form-group"><label>日期</label><input id="reportDate" type="date" required></div>
+        <div class="form-group"><label>總重 kg</label><input id="totalWeight" type="number" min="0" step="0.001" inputmode="decimal" required></div>
+        <div class="form-group"><label>單顆重量 g</label><input id="unitWeight" type="number" min="0" step="0.0001" inputmode="decimal" required></div>
+        <div class="form-group"><label>換算數量 pcs</label><input id="qty" type="text" readonly placeholder="系統自動計算"></div>
+        <div class="form-group"><label>備註</label><textarea id="remark" placeholder="沒有可留白"></textarea></div>
+        <button id="submitBtn" class="submit" type="submit">送出成品回報</button>
+        <button id="completeBtn" class="complete" type="button">✅ 送出本次回報＋批次完成</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>本批次成品回報紀錄</h2>
+      <div id="history"></div>
+    </div>
+  </section>
+</div>
+
+<script>
+const LIFF_ID='2011673429-ROxFgkBr';
+const GAS_WEB_APP_URL='https://script.google.com/macros/s/AKfycbyCdjMiE1RrNlAue5OzMGQCa9vhgd0cmwdjRE-G96377aA0IXFkCclh_GUoOe4qN8GFeg/exec';
+
+let currentUserId='', currentEmployeeName='', currentBatchId='', currentRequestId=null, submitting=false;
+
+document.addEventListener('DOMContentLoaded', init);
+
+async function init(){
+  try{
+    await liff.init({liffId:LIFF_ID});
+    if(!liff.isLoggedIn()){ liff.login(); return; }
+    const profile=await liff.getProfile();
+    currentUserId=profile.userId||'';
+    const auth=await apiGet('checkAuth',{userId:currentUserId});
+    if(!auth.success||!auth.authorized) throw new Error('您沒有使用此系統的權限');
+    currentEmployeeName=auth.employeeName||profile.displayName||'';
+    document.getElementById('employee').textContent='回報人員：'+currentEmployeeName;
+    document.getElementById('reportDate').value=today();
+    const p=new URLSearchParams(location.search);
+    const batchId=(p.get('batchId')||'').trim();
+    if(batchId) await openBatch(batchId);
+    else showSearch();
+  }catch(e){ showMsg(e.message||'系統初始化失敗','error'); }
+}
+
+function showSearch(){
+  currentBatchId='';
+  document.getElementById('searchView').classList.remove('hidden');
+  document.getElementById('reportView').classList.add('hidden');
+}
+function showReport(){
+  document.getElementById('searchView').classList.add('hidden');
+  document.getElementById('reportView').classList.remove('hidden');
+}
+document.getElementById('backBtn').addEventListener('click',showSearch);
+document.getElementById('searchBtn').addEventListener('click',searchBatches);
+document.getElementById('keyword').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();searchBatches();}});
+document.getElementById('includeCompleted').addEventListener('change',()=>{if(document.getElementById('keyword').value.trim())searchBatches();});
+
+async function searchBatches(){
+  const q=document.getElementById('keyword').value.trim();
+  const box=document.getElementById('results');
+  if(!q){box.innerHTML='<div class="sub" style="margin-top:12px">請先輸入搜尋內容。</div>';return;}
+  const btn=document.getElementById('searchBtn');
+  btn.disabled=true; btn.textContent='搜尋中...';
+  box.innerHTML='<div class="sub" style="margin-top:12px">搜尋中...</div>';
+  try{
+    const r=await apiGet('searchFinishedBatches',{userId:currentUserId,keyword:q,includeCompleted:document.getElementById('includeCompleted').checked});
+    if(!r.success) throw new Error(r.message||'搜尋失敗');
+    renderResults(r.batches||[]);
+  }catch(e){box.innerHTML='<div class="message error" style="display:block">'+esc(e.message||'搜尋失敗')+'</div>';}
+  finally{btn.disabled=false;btn.textContent='搜尋';}
+}
+
+function renderResults(items){
+  const box=document.getElementById('results');
+  if(!items.length){box.innerHTML='<div class="sub" style="margin-top:14px">找不到符合的批次。</div>';return;}
+  box.innerHTML=items.map(b=>{
+    const lotLabel=String(b.supplier||'').trim()==='緯丞'?'緯丞批號':'廠商批號';
+    return `<div class="search-result">
+      <div class="part">${esc(b.partNo||'-')}</div>
+      <div class="detail">
+        工令單號：${esc(b.workOrderNo||'-')}<br>
+        ${esc(lotLabel)}：${esc(b.materialLotNo||'-')}<br>
+        批次：${esc(b.batchId||'-')}<br>
+        供料方：${esc(b.supplier||'-')}<br>
+        狀態：<span class="status">${esc(b.status||'-')}</span>
+      </div>
+      <button class="report-btn" type="button" onclick="openBatch('${jsq(b.batchId)}')">回報成品</button>
+    </div>`;
+  }).join('');
+}
+
+async function openBatch(batchId){
+  currentBatchId=String(batchId||'').trim();
+  if(!currentBatchId) return;
+  showReport();
+  document.getElementById('batchInfo').innerHTML='載入中...';
+  await loadContext();
+}
+
+async function loadContext(){
+  try{
+    const r=await apiGet('getFinishedReportContext',{userId:currentUserId,batchId:currentBatchId});
+    if(!r.success) throw new Error(r.message||'讀取批次失敗');
+    renderContext(r);
+  }catch(e){showMsg(e.message||'讀取批次失敗','error');}
+}
+
+function renderContext(r){
+  const b=r.batch||{}, s=r.summary||{};
+  const lotLabel=String(b.supplier||'').trim()==='緯丞'?'緯丞批號':'廠商批號';
+  document.getElementById('batchInfo').innerHTML=
+    `<div><strong>件號：</strong>${esc(b.partNo||'-')}</div>
+     <div><strong>工令單號：</strong>${esc(b.workOrderNo||'-')}</div>
+     <div><strong>${esc(lotLabel)}：</strong>${esc(b.materialLotNo||'-')}</div>
+     <div><strong>批次 ID：</strong>${esc(b.batchId||'-')}</div>
+     <div><strong>供料方：</strong>${esc(b.supplier||'-')}</div>
+     <div><strong>狀態：</strong>${esc(b.status||'-')}</div>`;
+  document.getElementById('summary').innerHTML=
+    `<div class="sum"><b>${Number(s.reportCount||0)}</b><span>回報次數</span></div>
+     <div class="sum"><b>${fmt(s.totalWeight,3)}</b><span>累計 kg</span></div>
+     <div class="sum"><b>${Number(s.totalQuantity||0).toLocaleString('zh-TW')}</b><span>累計 pcs</span></div>`;
+  const completed=!!r.batchCompleted;
+  document.getElementById('reportCard').classList.toggle('hidden',completed);
+  renderHistory(r.reports||[]);
+  if(completed) showMsg('此批次已完成，以下為最終成品回報資料。','info'); else clearMsg();
+}
+
+function renderHistory(items){
+  const box=document.getElementById('history');
+  if(!items.length){box.innerHTML='<div class="sub">尚無回報紀錄</div>';return;}
+  box.innerHTML=items.slice().reverse().map(x=>`<div class="history">
+    <strong>第 ${Number(x.reportNo||0)} 次</strong>・${esc(x.date||'-')}<br>
+    總重：${fmt(x.totalWeight,3)} kg・單顆：${fmt(x.unitWeight,4)} g<br>
+    換算：${Number(x.quantity||0).toLocaleString('zh-TW')} pcs
+    ${x.remark?'<br>備註：'+esc(x.remark):''}
+    <br><span class="sub">${esc(x.reporter||'')}${x.reportTime?'・'+esc(x.reportTime):''}</span>
+  </div>`).join('');
+}
+
+['totalWeight','unitWeight'].forEach(id=>document.getElementById(id).addEventListener('input',calcQty));
+function calcQty(){
+  const w=Number(document.getElementById('totalWeight').value);
+  const u=Number(document.getElementById('unitWeight').value);
+  document.getElementById('qty').value=(w>0&&u>0)?Math.round(w*1000/u).toLocaleString('zh-TW'):'';
+}
+document.getElementById('reportForm').addEventListener('submit',e=>submitReport(e,false));
+document.getElementById('completeBtn').addEventListener('click',async e=>{
+  e.preventDefault();
+  const ok=await confirmComplete();
+  if(ok) submitReport(e,true);
+});
+
+async function submitReport(e,completeBatch){
+  e.preventDefault();
+  if(submitting) return;
+  const reportDate=document.getElementById('reportDate').value;
+  const totalWeight=Number(document.getElementById('totalWeight').value);
+  const unitWeight=Number(document.getElementById('unitWeight').value);
+  const remark=document.getElementById('remark').value.trim();
+  if(!reportDate){showMsg('請選擇日期','error');return;}
+  if(!(totalWeight>0)){showMsg('請輸入正確的總重 kg','error');return;}
+  if(!(unitWeight>0)){showMsg('請輸入本次實際成品單顆重量 g','error');return;}
+  if(!currentRequestId) currentRequestId=crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random().toString(36).slice(2);
+  const s=document.getElementById('submitBtn'), c=document.getElementById('completeBtn');
+  try{
+    submitting=true;s.disabled=true;c.disabled=true;
+    const r=await apiPost({action:'createFinishedReport',userId:currentUserId,batchId:currentBatchId,reportDate,totalWeight,unitWeight,remark,completeBatch,requestId:currentRequestId});
+    if(!r.success) throw new Error(r.message||'成品回報失敗');
+    currentRequestId=null;
+    document.getElementById('totalWeight').value='';
+    document.getElementById('unitWeight').value='';
+    document.getElementById('qty').value='';
+    document.getElementById('remark').value='';
+    showMsg(r.message||'成品回報成功','success');
+    await loadContext();
+  }catch(err){showMsg(err.message||'成品回報失敗','error');}
+  finally{submitting=false;s.disabled=false;c.disabled=false;}
+}
+
+function confirmComplete(){
+  return new Promise(resolve=>{
+    const o=document.createElement('div');
+    o.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99999;display:flex;align-items:center;justify-content:center;padding:22px';
+    o.innerHTML=`<div style="max-width:410px;width:100%;background:#fff;border-radius:16px;padding:22px"><h2>確認批次完成</h2><div style="line-height:1.6;margin-bottom:18px">確認批次 <strong>${esc(currentBatchId)}</strong> 已全部加工完成？送出後將不能再新增成品回報。</div><div style="display:flex;gap:10px"><button data-no style="flex:1">取消</button><button data-yes class="complete" style="flex:1;margin:0">確認完成</button></div></div>`;
+    const done=v=>{o.remove();resolve(v)};
+    o.querySelector('[data-no]').onclick=()=>done(false);
+    o.querySelector('[data-yes]').onclick=()=>done(true);
+    document.body.appendChild(o);
+  });
+}
+
+async function apiGet(action,params={}){
+  const u=new URL(GAS_WEB_APP_URL);u.searchParams.set('action',action);u.searchParams.set('_',Date.now());
+  Object.entries(params).forEach(([k,v])=>u.searchParams.set(k,String(v)));
+  const res=await fetch(u.toString(),{method:'GET',cache:'no-store',redirect:'follow'});
+  if(!res.ok) throw new Error('HTTP '+res.status);
+  return res.json();
+}
+async function apiPost(data){
+  const res=await fetch(GAS_WEB_APP_URL,{method:'POST',body:JSON.stringify(data),redirect:'follow'});
+  if(!res.ok) throw new Error('HTTP '+res.status);
+  return res.json();
+}
+function showMsg(t,type){const b=document.getElementById('msg');b.textContent=t;b.className='message '+type}
+function clearMsg(){const b=document.getElementById('msg');b.textContent='';b.className='message'}
+function today(){const d=new Date(),z=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`}
+function fmt(v,d){const n=Number(v||0);return n.toLocaleString('zh-TW',{minimumFractionDigits:0,maximumFractionDigits:d})}
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function jsq(v){return String(v??'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\r?\n/g,' ')}
+</script>
+</body>
+</html>
