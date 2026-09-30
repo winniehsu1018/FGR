@@ -32,6 +32,9 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .search-result{border:1px solid #dde2e6;border-radius:13px;padding:14px;margin-top:10px}
 .open-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid #e5e7e9}
 .open-count{font-size:13px;font-weight:700;color:#687076;background:#eef3f8;border-radius:999px;padding:5px 9px}
+.open-actions{display:flex;align-items:center;gap:8px}
+.refresh-btn{min-height:34px;padding:5px 10px;border-radius:9px;background:#eef3f8;color:#334155;font-size:13px;white-space:nowrap}
+.refresh-btn:active{transform:translateY(1px)}
 .open-list{margin-top:4px}
 .empty-open{margin-top:12px;padding:14px;border-radius:12px;background:#f6f8fa;color:#687076;text-align:center}
 .part{font-size:19px;font-weight:700;margin-bottom:8px}
@@ -80,7 +83,7 @@ button:disabled{opacity:.55;cursor:not-allowed}
     <div id="openBatchSection">
       <div class="open-head">
         <h2 style="margin:0">未結案批次</h2>
-        <span id="openCount" class="open-count">載入中...</span>
+        <div class="open-actions"><span id="openCount" class="open-count">載入中...</span><button id="refreshDataBtn" class="refresh-btn" type="button">🔄 更新資料</button></div>
       </div>
       <div id="openBatches" class="open-list"><div class="sub" style="margin-top:12px">載入未結案批次...</div></div>
     </div>
@@ -155,6 +158,38 @@ document.getElementById('backBtn').addEventListener('click',showSearch);
 document.getElementById('searchBtn').addEventListener('click',searchBatches);
 document.getElementById('keyword').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();searchBatches();}});
 document.getElementById('includeCompleted').addEventListener('change',()=>{if(document.getElementById('keyword').value.trim())searchBatches();});
+document.getElementById('refreshDataBtn').addEventListener('click',refreshFinishedData);
+
+async function refreshFinishedData(){
+  const btn=document.getElementById('refreshDataBtn');
+  const box=document.getElementById('openBatches');
+  const count=document.getElementById('openCount');
+  if(!btn||!currentUserId) return;
+  const oldText=btn.textContent;
+  btn.disabled=true;
+  btn.textContent='更新中...';
+  if(box) box.innerHTML='<div class="sub" style="margin-top:12px">正在重新讀取 Google Sheet...</div>';
+  if(count) count.textContent='更新中...';
+  try{
+    const r=await apiGet('refreshOpenFinishedBatches',{userId:currentUserId});
+    if(!r.success) throw new Error(r.message||'更新資料失敗');
+    const items=r.batches||[];
+    batchPreviewCache={};
+    items.forEach(b=>{if(b&&b.batchId) batchPreviewCache[String(b.batchId)]=b;});
+    if(count) count.textContent=items.length+' 筆';
+    renderOpenBatches(items);
+    showMsg('資料已更新','success');
+    const q=document.getElementById('keyword').value.trim();
+    if(q) await searchBatches();
+  }catch(e){
+    if(count) count.textContent='更新失敗';
+    if(box) box.innerHTML='<div class="message error" style="display:block">'+esc(e.message||'更新資料失敗')+'</div>';
+    showMsg(e.message||'更新資料失敗','error');
+  }finally{
+    btn.disabled=false;
+    btn.textContent=oldText;
+  }
+}
 
 async function loadOpenBatches(){
   const box=document.getElementById('openBatches');
