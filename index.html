@@ -45,14 +45,15 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .sum b{display:block;font-size:19px}
 .sum span{font-size:12px;color:#687076}
 .form-group{margin-bottom:14px}
-.date-field{max-width:250px}
+.date-field{width:100%;max-width:none}
+.date-field input[type="date"]{display:block;width:100%;max-width:none;min-width:0;box-sizing:border-box;-webkit-appearance:none;appearance:none}
 .date-field input[type=date]{width:100%;}
 .history{border-top:1px solid #e5e7e9;padding-top:10px;margin-top:10px;line-height:1.55}
 .hidden{display:none!important}
 .check{display:flex;align-items:center;gap:8px;margin-top:10px;font-weight:400}
 .check input{width:20px;min-height:20px}
 .back{background:#eef1f3;color:#303438;margin-bottom:12px}
-@media(max-width:420px){.summary{grid-template-columns:1fr 1fr 1fr}.app{padding-left:10px;padding-right:10px}.date-field{max-width:220px}}
+@media(max-width:420px){.summary{grid-template-columns:1fr 1fr 1fr}.app{padding-left:10px;padding-right:10px}.date-field{width:100%;max-width:none}.date-field input[type="date"]{width:100%;max-width:none;min-width:0}}
 </style>
 </head>
 <body>
@@ -191,7 +192,7 @@ function renderOpenBatches(items){
         供料方：${esc(b.supplier||'-')}<br>
         狀態：<span class="status">${esc(b.status||'-')}</span>
       </div>
-      <button class="report-btn" type="button" onclick="openBatch('${jsq(b.batchId)}')">回報成品</button>
+      ${finishedReportButtonHtml(b)}
     </div>`;
   }).join('');
 }
@@ -211,6 +212,15 @@ async function searchBatches(){
   finally{btn.disabled=false;btn.textContent='搜尋';}
 }
 
+function isFinishedBatchStatus(status){
+  return ['待結算','待出貨','已出完'].includes(String(status||'').trim());
+}
+
+function finishedReportButtonHtml(b){
+  if(isFinishedBatchStatus(b&&b.status)) return '';
+  return `<button class="report-btn" type="button" onclick="openBatch('${jsq(b.batchId)}')">回報成品</button>`;
+}
+
 function renderResults(items){
   items.forEach(b=>{if(b&&b.batchId) batchPreviewCache[String(b.batchId)]=b;});
   const box=document.getElementById('results');
@@ -226,7 +236,7 @@ function renderResults(items){
         供料方：${esc(b.supplier||'-')}<br>
         狀態：<span class="status">${esc(b.status||'-')}</span>
       </div>
-      <button class="report-btn" type="button" onclick="openBatch('${jsq(b.batchId)}')">回報成品</button>
+      ${finishedReportButtonHtml(b)}
     </div>`;
   }).join('');
 }
