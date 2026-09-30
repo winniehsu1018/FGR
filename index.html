@@ -30,6 +30,10 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .message.error{display:block;background:#fce8e6;color:#b3261e}
 .message.info{display:block;background:#e8f0fe;color:#174ea6}
 .search-result{border:1px solid #dde2e6;border-radius:13px;padding:14px;margin-top:10px}
+.open-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid #e5e7e9}
+.open-count{font-size:13px;font-weight:700;color:#687076;background:#eef3f8;border-radius:999px;padding:5px 9px}
+.open-list{margin-top:4px}
+.empty-open{margin-top:12px;padding:14px;border-radius:12px;background:#f6f8fa;color:#687076;text-align:center}
 .part{font-size:19px;font-weight:700;margin-bottom:8px}
 .detail{line-height:1.65;color:#4a4f54}
 .status{display:inline-block;padding:4px 9px;border-radius:999px;background:#eef3f8;font-size:13px;font-weight:700}
@@ -69,6 +73,14 @@ button:disabled{opacity:.55;cursor:not-allowed}
       顯示已完成批次
     </label>
     <div id="results"></div>
+
+    <div id="openBatchSection">
+      <div class="open-head">
+        <h2 style="margin:0">未結案批次</h2>
+        <span id="openCount" class="open-count">載入中...</span>
+      </div>
+      <div id="openBatches" class="open-list"><div class="sub" style="margin-top:12px">載入未結案批次...</div></div>
+    </div>
   </section>
 
   <section id="reportView" class="hidden">
@@ -121,7 +133,7 @@ async function init(){
     const p=new URLSearchParams(location.search);
     const batchId=(p.get('batchId')||'').trim();
     if(batchId) await openBatch(batchId);
-    else showSearch();
+    else { showSearch(); await loadOpenBatches(); }
   }catch(e){ showMsg(e.message||'系統初始化失敗','error'); }
 }
 
@@ -129,6 +141,7 @@ function showSearch(){
   currentBatchId='';
   document.getElementById('searchView').classList.remove('hidden');
   document.getElementById('reportView').classList.add('hidden');
+  loadOpenBatches();
 }
 function showReport(){
   document.getElementById('searchView').classList.add('hidden');
@@ -138,6 +151,46 @@ document.getElementById('backBtn').addEventListener('click',showSearch);
 document.getElementById('searchBtn').addEventListener('click',searchBatches);
 document.getElementById('keyword').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();searchBatches();}});
 document.getElementById('includeCompleted').addEventListener('change',()=>{if(document.getElementById('keyword').value.trim())searchBatches();});
+
+async function loadOpenBatches(){
+  const box=document.getElementById('openBatches');
+  const count=document.getElementById('openCount');
+  if(!box||!count||!currentUserId) return;
+  box.innerHTML='<div class="sub" style="margin-top:12px">載入未結案批次...</div>';
+  count.textContent='載入中...';
+  try{
+    const r=await apiGet('getOpenFinishedBatches',{userId:currentUserId});
+    if(!r.success) throw new Error(r.message||'讀取未結案批次失敗');
+    const items=r.batches||[];
+    count.textContent=items.length+' 筆';
+    renderOpenBatches(items);
+  }catch(e){
+    count.textContent='讀取失敗';
+    box.innerHTML='<div class="message error" style="display:block">'+esc(e.message||'讀取未結案批次失敗')+'</div>';
+  }
+}
+
+function renderOpenBatches(items){
+  const box=document.getElementById('openBatches');
+  if(!items.length){
+    box.innerHTML='<div class="empty-open">目前沒有未結案批次</div>';
+    return;
+  }
+  box.innerHTML=items.map(b=>{
+    const lotLabel=String(b.supplier||'').trim()==='緯丞'?'緯丞批號':'廠商批號';
+    return `<div class="search-result">
+      <div class="part">${esc(b.partNo||'-')}</div>
+      <div class="detail">
+        工令單號：${esc(b.workOrderNo||'-')}<br>
+        ${esc(lotLabel)}：${esc(b.materialLotNo||'-')}<br>
+        批次：${esc(b.batchId||'-')}<br>
+        供料方：${esc(b.supplier||'-')}<br>
+        狀態：<span class="status">${esc(b.status||'-')}</span>
+      </div>
+      <button class="report-btn" type="button" onclick="openBatch('${jsq(b.batchId)}')">回報成品</button>
+    </div>`;
+  }).join('');
+}
 
 async function searchBatches(){
   const q=document.getElementById('keyword').value.trim();
