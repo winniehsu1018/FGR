@@ -118,6 +118,7 @@ const LIFF_ID='2011720134-fCUd1olH';
 const GAS_WEB_APP_URL='https://script.google.com/macros/s/AKfycbyCdjMiE1RrNlAue5OzMGQCa9vhgd0cmwdjRE-G96377aA0IXFkCclh_GUoOe4qN8GFeg/exec';
 
 let currentUserId='', currentEmployeeName='', currentBatchId='', currentRequestId=null, submitting=false;
+const batchPreviewCache={};
 
 document.addEventListener('DOMContentLoaded', init);
 
@@ -135,7 +136,7 @@ async function init(){
     const p=new URLSearchParams(location.search);
     const batchId=(p.get('batchId')||'').trim();
     if(batchId) await openBatch(batchId);
-    else { showSearch(); await loadOpenBatches(); }
+    else { showSearch(); }
   }catch(e){ showMsg(e.message||'系統初始化失敗','error'); }
 }
 
@@ -164,6 +165,7 @@ async function loadOpenBatches(){
     const r=await apiGet('getOpenFinishedBatches',{userId:currentUserId});
     if(!r.success) throw new Error(r.message||'讀取未結案批次失敗');
     const items=r.batches||[];
+    items.forEach(b=>{if(b&&b.batchId) batchPreviewCache[String(b.batchId)]=b;});
     count.textContent=items.length+' 筆';
     renderOpenBatches(items);
   }catch(e){
@@ -210,6 +212,7 @@ async function searchBatches(){
 }
 
 function renderResults(items){
+  items.forEach(b=>{if(b&&b.batchId) batchPreviewCache[String(b.batchId)]=b;});
   const box=document.getElementById('results');
   if(!items.length){box.innerHTML='<div class="sub" style="margin-top:14px">找不到符合的批次。</div>';return;}
   box.innerHTML=items.map(b=>{
@@ -232,14 +235,39 @@ async function openBatch(batchId){
   currentBatchId=String(batchId||'').trim();
   if(!currentBatchId) return;
   showReport();
-  document.getElementById('batchInfo').innerHTML='載入中...';
-  await loadContext();
+
+  // 首頁/搜尋卡片已經有的資料先立即顯示，讓員工不用等 GAS 才能開始輸入。
+  const preview=batchPreviewCache[currentBatchId];
+  if(preview){
+    renderBatchPreview(preview);
+    document.getElementById('reportCard').classList.remove('hidden');
+    document.getElementById('history').innerHTML='<div class="sub">正在載入累計與歷史紀錄...</div>';
+    clearMsg();
+  }else{
+    document.getElementById('batchInfo').innerHTML='載入批次資料...';
+  }
+
+  // 歷史紀錄與正式狀態在背景載入；不阻擋日期/重量欄位操作。
+  loadContext();
+}
+
+function renderBatchPreview(b){
+  const lotLabel=String(b.supplier||'').trim()==='緯丞'?'緯丞批號':'廠商批號';
+  document.getElementById('batchInfo').innerHTML=
+    `<div><strong>件號：</strong>${esc(b.partNo||'-')}</div>
+     <div><strong>工令單號：</strong>${esc(b.workOrderNo||'-')}</div>
+     <div><strong>${esc(lotLabel)}：</strong>${esc(b.materialLotNo||'-')}</div>
+     <div><strong>批次 ID：</strong>${esc(b.batchId||'-')}</div>
+     <div><strong>供料方：</strong>${esc(b.supplier||'-')}</div>
+     <div><strong>來料總重：</strong>${fmt(b.arrivalWeight,3)} kg</div>
+     <div><strong>狀態：</strong>${esc(b.status||'-')}</div>`;
 }
 
 async function loadContext(){
   try{
     const r=await apiGet('getFinishedReportContext',{userId:currentUserId,batchId:currentBatchId});
     if(!r.success) throw new Error(r.message||'讀取批次失敗');
+    if(r.batch&&r.batch.batchId) batchPreviewCache[String(r.batch.batchId)]=r.batch;
     renderContext(r);
   }catch(e){showMsg(e.message||'讀取批次失敗','error');}
 }
