@@ -57,6 +57,8 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .detail{line-height:1.65;color:#4a4f54}
 .status{display:inline-block;padding:4px 9px;border-radius:999px;background:#eef3f8;font-size:13px;font-weight:700}
 .report-btn{width:100%;margin-top:12px;background:#188038;color:#fff}
+.view-btn{background:#e3edff;color:#174ea6}
+.readonly-note{margin-top:12px;padding:12px;border-radius:10px;background:#edf5ff;color:#174ea6;font-weight:700;line-height:1.5}
 .info{line-height:1.75}
 .info strong{display:inline-block;min-width:86px}
 .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
@@ -149,6 +151,7 @@ const LIFF_ID='2011720134-fCUd1olH';
 const GAS_WEB_APP_URL='https://script.google.com/macros/s/AKfycbyCdjMiE1RrNlAue5OzMGQCa9vhgd0cmwdjRE-G96377aA0IXFkCclh_GUoOe4qN8GFeg/exec';
 
 let currentUserId='', currentEmployeeName='', currentBatchId='', currentRequestId=null, submitting=false;
+let currentBatchReadOnly=false;
 let searchRequestSeq=0;
 let batchPreviewCache={};
 
@@ -314,8 +317,9 @@ function isFinishedBatchStatus(status){
 }
 
 function finishedReportButtonHtml(b){
-  if(isFinishedBatchStatus(b&&b.status)) return '';
-  return `<button class="report-btn" type="button" onclick="openBatch('${jsq(b.batchId)}')">回報成品</button>`;
+  const readonly=isFinishedBatchStatus(b&&b.status);
+  const label=readonly?'查看紀錄':'回報成品';
+  return `<button class="report-btn ${readonly?'view-btn':''}" type="button" onclick="openBatch('${jsq(b.batchId)}')">${readonly?'📋 ':''}${label}</button>`;
 }
 
 function renderResults(items){
@@ -343,12 +347,15 @@ async function openBatch(batchId){
   currentBatchId=String(batchId||'').trim();
   if(!currentBatchId) return;
   showReport();
+  currentBatchReadOnly=true; // 正式狀態確認前預設唯讀，避免資料載入期間誤送出
+  document.getElementById('reportCard').classList.add('hidden');
+  document.getElementById('summary').innerHTML='';
+  document.getElementById('history').innerHTML='<div class="sub">正在載入歷史紀錄...</div>';
 
   // 首頁/搜尋卡片已經有的資料先立即顯示，讓員工不用等 GAS 才能開始輸入。
   const preview=batchPreviewCache[currentBatchId];
   if(preview){
     renderBatchPreview(preview);
-    document.getElementById('reportCard').classList.remove('hidden');
     document.getElementById('history').innerHTML='<div class="sub">正在載入累計與歷史紀錄...</div>';
     clearMsg();
   }else{
@@ -372,12 +379,14 @@ function renderBatchPreview(b){
 }
 
 async function loadContext(){
+  const requestedBatchId=currentBatchId;
   try{
-    const r=await apiGet('getFinishedReportContext',{userId:currentUserId,batchId:currentBatchId});
+    const r=await apiGet('getFinishedReportContext',{userId:currentUserId,batchId:requestedBatchId});
+    if(requestedBatchId!==currentBatchId) return;
     if(!r.success) throw new Error(r.message||'讀取批次失敗');
     if(r.batch&&r.batch.batchId) batchPreviewCache[String(r.batch.batchId)]=r.batch;
     renderContext(r);
-  }catch(e){showMsg(e.message||'讀取批次失敗','error');}
+  }catch(e){if(requestedBatchId===currentBatchId) showMsg(e.message||'讀取批次失敗','error');}
 }
 
 function renderContext(r){
@@ -396,9 +405,10 @@ function renderContext(r){
      <div class="sum"><b>${fmt(s.totalWeight,3)}</b><span>累計 kg</span></div>
      <div class="sum"><b>${Number(s.totalQuantity||0).toLocaleString('zh-TW')}</b><span>累計 pcs</span></div>`;
   const completed=!!r.batchCompleted;
-  document.getElementById('reportCard').classList.toggle('hidden',completed);
+  currentBatchReadOnly=completed||isFinishedBatchStatus(b.status);
+  document.getElementById('reportCard').classList.toggle('hidden',currentBatchReadOnly);
   renderHistory(r.reports||[]);
-  if(completed) showMsg('此批次已完成，以下為最終成品回報資料。','info'); else clearMsg();
+  if(currentBatchReadOnly) showMsg('此批次為唯讀狀態，可查看歷史紀錄，不能新增成品回報。','info'); else clearMsg();
 }
 
 function renderHistory(items){
@@ -429,6 +439,7 @@ document.getElementById('completeBtn').addEventListener('click',async e=>{
 async function submitReport(e,completeBatch){
   e.preventDefault();
   if(submitting) return;
+  if(currentBatchReadOnly){showMsg('此批次目前為唯讀狀態，不能新增成品回報。','error');return;}
   const reportDate=document.getElementById('reportDate').value;
   const totalWeight=Number(document.getElementById('totalWeight').value);
   const unitWeight=Number(document.getElementById('unitWeight').value);
