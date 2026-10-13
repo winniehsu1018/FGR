@@ -29,6 +29,22 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .message.success{display:block;background:#e6f4ea;color:#137333}
 .message.error{display:block;background:#fce8e6;color:#b3261e}
 .message.info{display:block;background:#e8f0fe;color:#174ea6}
+/* 明確區分搜尋結果與未結案批次 */
+.result-zone{margin-top:18px;padding:14px;border:2px solid #8bb9f5;border-left:6px solid #1a73e8;border-radius:15px;background:#edf5ff}
+.result-zone .zone-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}
+.result-zone h2{margin:0;color:#174ea6;font-size:20px}
+.result-zone .zone-note{font-size:13px;color:#466a98;line-height:1.5}
+.result-zone .search-result{background:#fff;border:1px solid #c6daf6}
+.result-count{background:#d7e8ff;color:#174ea6;font-size:13px;font-weight:700;border-radius:999px;padding:5px 10px;white-space:nowrap}
+.open-zone{margin-top:22px;background:#f0f2f5;border:1px solid #cbd3dc;border-radius:15px;padding:12px}
+.open-zone .open-head{margin:0;padding:0;border:0;gap:8px}
+.open-zone .open-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:1;min-width:0}
+.open-zone .open-title h2{margin:0;font-size:18px;color:#344054}
+.open-zone .open-list{margin-top:12px}
+.open-zone .search-result{background:#fff;border:1px solid #d5dce5}
+.open-toggle{width:100%;text-align:left;display:flex;align-items:center;justify-content:space-between;gap:8px;background:#dfe5ed;color:#344054;min-height:44px;padding:9px 12px}
+.open-toggle .chevron{font-size:18px;line-height:1}
+.open-actions{margin-top:10px;justify-content:flex-end}
 .search-result{border:1px solid #dde2e6;border-radius:13px;padding:14px;margin-top:10px}
 .open-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid #e5e7e9}
 .open-count{font-size:13px;font-weight:700;color:#687076;background:#eef3f8;border-radius:999px;padding:5px 9px}
@@ -78,13 +94,24 @@ button:disabled{opacity:.55;cursor:not-allowed}
       <input id="includeCompleted" type="checkbox">
       顯示已完成批次
     </label>
-    <div id="results"></div>
-
-    <div id="openBatchSection">
-      <div class="open-head">
-        <h2 style="margin:0">未結案批次</h2>
-        <div class="open-actions"><span id="openCount" class="open-count">載入中...</span><button id="refreshDataBtn" class="refresh-btn" type="button">🔄 更新資料</button></div>
+    <div id="searchResultSection" class="result-zone hidden" aria-live="polite">
+      <div class="zone-heading">
+        <h2>🔎 搜尋結果</h2>
+        <span id="resultCount" class="result-count">0 筆</span>
       </div>
+      <div class="zone-note">這裡只顯示符合搜尋條件的批次</div>
+      <div id="results"></div>
+    </div>
+
+    <div id="openBatchSection" class="open-zone">
+      <div class="open-head">
+        <div class="open-title"><h2>📋 未結案批次</h2><span id="openCount" class="open-count">載入中...</span></div>
+      </div>
+      <div class="sub" style="margin:8px 0">目前待處理的全部批次，與上方搜尋結果分開顯示。</div>
+      <button id="openToggleBtn" class="open-toggle" type="button" aria-expanded="true" aria-controls="openBatches">
+        <span id="openToggleText">收合未結案清單</span><span id="openChevron" class="chevron">▴</span>
+      </button>
+      <div class="open-actions"><button id="refreshDataBtn" class="refresh-btn" type="button">🔄 更新資料</button></div>
       <div id="openBatches" class="open-list"><div class="sub" style="margin-top:12px">載入未結案批次...</div></div>
     </div>
   </section>
@@ -122,7 +149,8 @@ const LIFF_ID='2011720134-fCUd1olH';
 const GAS_WEB_APP_URL='https://script.google.com/macros/s/AKfycbyCdjMiE1RrNlAue5OzMGQCa9vhgd0cmwdjRE-G96377aA0IXFkCclh_GUoOe4qN8GFeg/exec';
 
 let currentUserId='', currentEmployeeName='', currentBatchId='', currentRequestId=null, submitting=false;
-const batchPreviewCache={};
+let searchRequestSeq=0;
+let batchPreviewCache={};
 
 document.addEventListener('DOMContentLoaded', init);
 
@@ -148,6 +176,7 @@ function showSearch(){
   currentBatchId='';
   document.getElementById('searchView').classList.remove('hidden');
   document.getElementById('reportView').classList.add('hidden');
+  syncSearchSections(true);
   loadOpenBatches();
 }
 function showReport(){
@@ -159,6 +188,31 @@ document.getElementById('searchBtn').addEventListener('click',searchBatches);
 document.getElementById('keyword').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();searchBatches();}});
 document.getElementById('includeCompleted').addEventListener('change',()=>{if(document.getElementById('keyword').value.trim())searchBatches();});
 document.getElementById('refreshDataBtn').addEventListener('click',refreshFinishedData);
+// 搜尋期間未結案清單自動收合；仍可由員工手動展開。
+const keywordInput=document.getElementById('keyword');
+keywordInput.addEventListener('input',()=>{
+  searchRequestSeq++; // 舊搜尋回應不得覆蓋新的搜尋條件
+  document.getElementById('results').innerHTML='';
+  document.getElementById('resultCount').textContent='尚未搜尋';
+  syncSearchSections(true);
+});
+document.getElementById('openToggleBtn').addEventListener('click',()=>{
+  const expanded=document.getElementById('openToggleBtn').getAttribute('aria-expanded')!=='true';
+  setOpenExpanded(expanded);
+});
+function setOpenExpanded(expanded){
+  document.getElementById('openBatches').classList.toggle('hidden',!expanded);
+  const toggle=document.getElementById('openToggleBtn');
+  toggle.setAttribute('aria-expanded',String(expanded));
+  document.getElementById('openToggleText').textContent=expanded?'收合未結案清單':'展開未結案清單';
+  document.getElementById('openChevron').textContent=expanded?'▴':'▾';
+}
+function syncSearchSections(resetCollapse=false){
+  const searching=!!keywordInput.value.trim();
+  document.getElementById('searchResultSection').classList.toggle('hidden',!searching);
+  if(resetCollapse || !searching) setOpenExpanded(!searching);
+}
+
 
 async function refreshFinishedData(){
   const btn=document.getElementById('refreshDataBtn');
@@ -235,16 +289,24 @@ function renderOpenBatches(items){
 async function searchBatches(){
   const q=document.getElementById('keyword').value.trim();
   const box=document.getElementById('results');
-  if(!q){box.innerHTML='<div class="sub" style="margin-top:12px">請先輸入搜尋內容。</div>';return;}
+  syncSearchSections();
+  if(!q){box.innerHTML='';return;}
+  const seq=++searchRequestSeq;
   const btn=document.getElementById('searchBtn');
   btn.disabled=true; btn.textContent='搜尋中...';
+  document.getElementById('resultCount').textContent='搜尋中';
   box.innerHTML='<div class="sub" style="margin-top:12px">搜尋中...</div>';
   try{
     const r=await apiGet('searchFinishedBatches',{userId:currentUserId,keyword:q,includeCompleted:document.getElementById('includeCompleted').checked});
+    if(seq!==searchRequestSeq) return;
     if(!r.success) throw new Error(r.message||'搜尋失敗');
     renderResults(r.batches||[]);
-  }catch(e){box.innerHTML='<div class="message error" style="display:block">'+esc(e.message||'搜尋失敗')+'</div>';}
-  finally{btn.disabled=false;btn.textContent='搜尋';}
+  }catch(e){
+    if(seq===searchRequestSeq){
+      document.getElementById('resultCount').textContent='搜尋失敗';
+      box.innerHTML='<div class="message error" style="display:block">'+esc(e.message||'搜尋失敗')+'</div>';
+    }
+  }finally{btn.disabled=false;btn.textContent='搜尋';}
 }
 
 function isFinishedBatchStatus(status){
@@ -259,7 +321,8 @@ function finishedReportButtonHtml(b){
 function renderResults(items){
   items.forEach(b=>{if(b&&b.batchId) batchPreviewCache[String(b.batchId)]=b;});
   const box=document.getElementById('results');
-  if(!items.length){box.innerHTML='<div class="sub" style="margin-top:14px">找不到符合的批次。</div>';return;}
+  document.getElementById('resultCount').textContent=items.length+' 筆';
+  if(!items.length){box.innerHTML='<div class="empty-open">找不到符合的批次。</div>';return;}
   box.innerHTML=items.map(b=>{
     const lotLabel=String(b.supplier||'').trim()==='緯丞'?'緯丞批號':'廠商批號';
     return `<div class="search-result">
