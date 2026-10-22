@@ -137,6 +137,7 @@ button:disabled{opacity:.55;cursor:not-allowed}
         <div class="form-group"><label>換算數量 pcs</label><input id="qty" type="text" readonly placeholder="系統自動計算"></div></div>
         <div id="quantityFields" class="hidden"><div class="form-group"><label>完成數量 pcs</label><input id="directQty" type="number" min="1" step="1" inputmode="numeric" placeholder="請輸入本次完成數量"></div><div class="sub" style="margin-bottom:12px">數量回報以輸入的 pcs 為準；總重與單顆重量可選填。兩項都有填寫時，若換算差異超過 5%，系統會提醒但仍可送出。</div></div>
         <div class="form-group"><label>備註</label><textarea id="remark" placeholder="沒有可留白"></textarea></div>
+        <div id="reportFeedback" class="message" role="status" aria-live="polite"></div>
         <button id="submitBtn" class="submit" type="submit">送出成品回報</button>
         <button id="completeBtn" class="complete" type="button">✅ 送出本次回報＋批次完成</button>
         <div class="sub" style="margin-top:8px">有填寫本次數據：回報並完成批次；數量、總重、單顆重量全部留白：僅完成批次，不新增回報紀錄。</div>
@@ -349,6 +350,8 @@ function renderResults(items){
 
 async function openBatch(batchId){
   currentBatchId=String(batchId||'').trim();
+  const feedback=document.getElementById('reportFeedback');
+  if(feedback){feedback.textContent='';feedback.className='message';}
   if(!currentBatchId) return;
   showReport();
   currentBatchReadOnly=true; // 正式狀態確認前預設唯讀，避免資料載入期間誤送出
@@ -495,7 +498,7 @@ document.getElementById('completeBtn').addEventListener('click',async e=>{
 async function submitReport(e,completeBatch){
   e.preventDefault();
   if(submitting) return;
-  if(currentBatchReadOnly){showMsg('此批次目前為唯讀狀態，不能新增成品回報。','error');return;}
+  if(currentBatchReadOnly){showReportFeedback('此批次目前為唯讀狀態，不能新增成品回報。','error');return;}
   const reportDate=document.getElementById('reportDate').value;
   const weightRaw=document.getElementById('totalWeight').value.trim();
   const unitRaw=document.getElementById('unitWeight').value.trim();
@@ -506,12 +509,12 @@ async function submitReport(e,completeBatch){
   const unitWeight=unitRaw===''?NaN:Number(unitRaw);
   const quantity=directRaw===''?NaN:Number(directRaw);
   const remark=document.getElementById('remark').value.trim();
-  if(!reportDate){showMsg('請選擇日期','error');return;}
-  if(!completionOnly && reportMode==='重量' && !(totalWeight>0)){showMsg('請輸入正確的總重 kg','error');return;}
-  if(!completionOnly && reportMode==='重量' && !(unitWeight>0)){showMsg('請輸入正確的單顆重量 g','error');return;}
-  if(!completionOnly && reportMode==='數量' && !(Number.isSafeInteger(quantity)&&quantity>0)){showMsg('完成數量必須為正整數','error');return;}
+  if(!reportDate){showReportFeedback('請選擇日期','error');return;}
+  if(!completionOnly && reportMode==='重量' && !(totalWeight>0)){showReportFeedback('請輸入正確的總重 kg','error');return;}
+  if(!completionOnly && reportMode==='重量' && !(unitWeight>0)){showReportFeedback('請輸入正確的單顆重量 g','error');return;}
+  if(!completionOnly && reportMode==='數量' && !(Number.isSafeInteger(quantity)&&quantity>0)){showReportFeedback('完成數量必須為正整數','error');return;}
   if(reportMode==='數量' && !completionOnly){
-    if((weightRaw!=='' && !(totalWeight>0)) || (unitRaw!=='' && !(unitWeight>0))){showMsg('選填重量若有輸入，必須大於 0','error');return;}
+    if((weightRaw!=='' && !(totalWeight>0)) || (unitRaw!=='' && !(unitWeight>0))){showReportFeedback('選填重量若有輸入，必須大於 0','error');return;}
     if(weightRaw!=='' && unitRaw!=='' && Math.abs(Math.round(totalWeight*1000/unitWeight)-quantity)/quantity>0.05){
       if(!confirm('重量換算約 '+Math.round(totalWeight*1000/unitWeight).toLocaleString('zh-TW')+' pcs，與填寫的 '+quantity.toLocaleString('zh-TW')+' pcs 差異超過 5%。仍要以填寫數量送出嗎？'))return;
     }
@@ -520,6 +523,8 @@ async function submitReport(e,completeBatch){
   const s=document.getElementById('submitBtn'), c=document.getElementById('completeBtn');
   try{
     submitting=true;s.disabled=true;c.disabled=true;
+    s.textContent='送出中...'; c.textContent='處理中...';
+    showReportFeedback('資料送出中，請稍候…','info');
     const payload={action:completionOnly?'completeFinishedBatchOnly':'createFinishedReport',userId:currentUserId,batchId:currentBatchId,reportDate,reportMode,remark,completeBatch,requestId:currentRequestId};
     if(!completionOnly){if(reportMode==='數量'){payload.quantity=quantity;if(weightRaw!=='')payload.totalWeight=totalWeight;if(unitRaw!=='')payload.unitWeight=unitWeight;}else{payload.totalWeight=totalWeight;payload.unitWeight=unitWeight;}}
     const r=await apiPost(payload);
@@ -530,10 +535,12 @@ async function submitReport(e,completeBatch){
     document.getElementById('qty').value='';
     document.getElementById('directQty').value='';
     document.getElementById('remark').value='';
-    showMsg(r.message||(completionOnly?'批次完成成功，未新增成品回報':'成品回報成功'),'success');
+    const successText=r.message||(completionOnly?'批次完成成功，未新增成品回報':'成品回報成功');
+    showReportFeedback('✅ '+successText,'success');
     await loadContext();
-  }catch(err){showMsg(err.message||'成品回報失敗','error');}
-  finally{submitting=false;s.disabled=false;c.disabled=false;}
+    showReportFeedback('✅ '+successText,'success');
+  }catch(err){showReportFeedback('⚠️ '+(err.message||'成品回報失敗'),'error');}
+  finally{submitting=false;s.disabled=false;c.disabled=false;s.textContent='送出成品回報';c.textContent='✅ 送出本次回報＋批次完成';}
 }
 
 function confirmComplete(){
@@ -559,6 +566,12 @@ async function apiPost(data){
   const res=await fetch(GAS_WEB_APP_URL,{method:'POST',body:JSON.stringify(data),redirect:'follow'});
   if(!res.ok) throw new Error('HTTP '+res.status);
   return res.json();
+}
+function showReportFeedback(t,type){
+  const b=document.getElementById('reportFeedback');
+  if(!b) return;
+  b.textContent=t; b.className='message '+type;
+  b.scrollIntoView({behavior:'smooth',block:'center'});
 }
 function showMsg(t,type){const b=document.getElementById('msg');b.textContent=t;b.className='message '+type}
 function clearMsg(){const b=document.getElementById('msg');b.textContent='';b.className='message'}
